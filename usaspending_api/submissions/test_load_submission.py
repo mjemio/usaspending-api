@@ -1,4 +1,4 @@
-from django.test import TestCase, Client
+from django.test import TestCase, Client, TransactionTestCase
 from django.core.management import call_command
 from usaspending_api.accounts.models import *
 from usaspending_api.awards.models import *
@@ -11,7 +11,7 @@ import os
 from model_mommy import mommy
 
 
-class LoadSubmissionTest(TestCase):
+class LoadSubmissionTest(TransactionTestCase):
 
     fixtures = ['2016_09_12_data.json']
 

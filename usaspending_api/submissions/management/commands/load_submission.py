@@ -14,6 +14,7 @@ from usaspending_api.accounts.models import *
 from usaspending_api.financial_activities.models import *
 from usaspending_api.awards.models import *
 from usaspending_api.references.models import *
+from usaspending_api.common.threaded_data_loader import ThreadedDataLoader
 
 
 # This command will load a single submission from the data broker database into
@@ -117,42 +118,36 @@ class Command(BaseCommand):
         appropriation_data = dictfetchall(db_cursor)
         self.logger.info('Acquired appropriation data for ' + str(submission_id) + ', there are ' + str(len(appropriation_data)) + ' rows.')
 
-        # Create account objects
-        for row in appropriation_data:
-            # Check and see if there is an entry for this TAS
-            treasury_account = None
-            try:
-                treasury_account = TreasuryAppropriationAccount.objects.get(tas_rendering_label=row['tas'])
-            except ObjectDoesNotExist:
-                treasury_account = TreasuryAppropriationAccount()
+        field_map = {
+            'tas_rendering_label': 'tas',
+            'submission_id': submission_attributes.submission_id,
+            'allocation_transfer_agency__cgac_code': 'allocation_transfer_agency',
+            'responsible_agency__cgac_code': 'agency_identifier'
+        }
 
-                field_map = {
-                    'tas_rendering_label': 'tas',
-                    'submission_id': submission_attributes.submission_id,
-                    'allocation_transfer_agency__cgac_code': 'allocation_transfer_agency',
-                    'responsible_agency__cgac_code': 'agency_identifier'
-                }
+        value_map = {
+            'data_source': 'DBR'
+        }
 
-                load_data_into_model(treasury_account, row, field_map=field_map, save=True)
+        # Create our threaded data loader
+        # Load TAS's
+        threaded_loader = ThreadedDataLoader(TreasuryAppropriationAccount, field_map=field_map, value_map=value_map, collision_field="tas_rendering_label", collision_behavior="skip")
+        threaded_loader.load_from_dict_list(appropriation_data)
 
-            # Now that we have the account, we can load the appropriation balances
-            # TODO: Figure out how we want to determine what row is overriden by what row
-            # If we want to correlate, the following attributes are available in the
-            # data broker data that might be useful: appropriation_id, row_number
-            # appropriation_balances = somethingsomething get appropriation balances...
-            appropriation_balances = AppropriationAccountBalances()
+        # Switch to creating AppropriationAccountBalances
+        field_map = {
+            'tas_rendering_label': 'tas'
+        }
 
-            value_map = {
-                'treasury_account_identifier': treasury_account,
-                'submission_process': submission_process,
-                'submission': submission_attributes
-            }
+        value_map = {
+            'data_source': 'DBR',
+            'treasury_account_identifier': lambda row: TreasuryAppropriationAccount.objects.filter(tas_rendering_label=row['tas']).first(),
+            'submission_process': submission_process,
+            'submission': submission_attributes
+        }
 
-            field_map = {
-                'tas_rendering_label': 'tas'
-            }
-
-            load_data_into_model(appropriation_balances, row, field_map=field_map, value_map=value_map, save=True)
+        threaded_loader = ThreadedDataLoader(AppropriationAccountBalances, field_map=field_map, value_map=value_map, collision_field="tas_rendering_label")
+        threaded_loader.load_from_dict_list(appropriation_data)
 
         # Let's get File B information
         db_cursor.execute('SELECT * FROM object_class_program_activity WHERE submission_id = %s', [submission_id])

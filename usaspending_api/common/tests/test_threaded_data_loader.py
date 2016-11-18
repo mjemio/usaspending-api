@@ -5,6 +5,7 @@ from django.core.management import call_command
 from django.conf import settings
 import os
 import pytest
+import csv
 
 
 class ThreadedDataLoaderTests(TransactionTestCase):
@@ -73,3 +74,22 @@ class ThreadedDataLoaderTests(TransactionTestCase):
 
         gwa_tas = TreasuryAppropriationAccount.objects.get(gwa_tas='110100')
         self.assertEqual(gwa_tas.gwa_tas_name, file_1_gwa_tas_name)
+
+        # Test it with dict loading
+        TreasuryAppropriationAccount.objects.all().delete()
+        file_1_data_dict_list = []
+        file_2_data_dict_list = []
+
+        with open(file_path_1) as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                file_1_data_dict_list.append(row)
+
+        with open(file_path_2) as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                file_2_data_dict_list.append(row)
+
+        # Load it once
+        loader.load_from_dict_list(file_1_data_dict_list)
+        gwa_tas = TreasuryAppropriationAccount.objects.get(gwa_tas='110100')

@@ -55,59 +55,85 @@ class ThreadedDataLoader():
         self.post_row_function = post_row_function
         self.post_process_function = post_process_function
         self.fields = [field.name for field in self.model_class._meta.get_fields()]
+        self.pool = []  # Process pool
+        self.data_queue = JoinableQueue()  # Data queue
 
     # Loads data from a file using parameters set during creation of the loader
     # The filepath parameter should be the string location of the file for use with open()
     def load_from_file(self, filepath):
         self.logger.info('Started processing file ' + filepath)
-        # Create the Queue object - this will hold all the rows in the CSV
-        row_queue = JoinableQueue()
 
-        references = {
-            "collision_field": self.collision_field,
-            "collision_behavior": self.collision_behavior,
-            "logger": self.logger,
-            "pre_row_function": self.pre_row_function,
-            "post_row_function": self.post_row_function,
-            "fields": self.fields.copy()
-        }
-
-        # Spawn our processes
-        # We have to kill any DB connections before forking processes, as Django
-        # will want to share the single connection with all processes and we
-        # don't want to have any deadlock/effeciency problems due to that
-        db.connections.close_all()
-        pool = []
-        for i in range(self.processes):
-            pool.append(DataLoaderThread("Process-" + str(len(pool)), self.model_class, row_queue, self.field_map.copy(), self.value_map.copy(), references))
-
-        for process in pool:
-            process.start()
+        self.fill_process_pool_and_start()
 
         with open(filepath) as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
-                row_queue.put(row)
+                self.data_queue.put(row)
 
-        for i in range(self.processes):
-            row_queue.put(None)
-
-        row_queue.join()
+        self.notify_kill_processes(self.data_queue)
 
         if self.post_process_function is not None:
             self.post_process_function()
 
         self.logger.info('Finished processing all rows')
 
+    # Loads data from a dict list
+    def load_from_dict_list(self, dict_list):
+        self.logger.info('Started processing list of length ' + str(len(dict_list)))
+
+        self.fill_process_pool_and_start()
+
+        # Load that data into the queue for processing
+        for row in dict_list:
+            self.data_queue.put(row)
+
+        self.notify_kill_processes(self.data_queue)
+
+        if self.post_process_function is not None:
+            self.post_process_function()
+
+        self.logger.info('Finished processing all rows')
+
+    def fill_process_pool_and_start(self):
+        # Spawn our processes
+        # We have to kill any DB connections before forking processes, as Django
+        # will want to share the single connection with all processes and we
+        # don't want to have any deadlock/effeciency problems due to that
+        db.connections.close_all()
+        self.pool = []
+        for i in range(self.processes):
+            self.pool.append(DataLoaderThread("Process-" + str(len(self.pool)), self.data_queue, self.create_reference_object()))
+
+        for process in self.pool:
+            process.start()
+
+    # Signals the processes to kill themselves
+    def notify_kill_processes(self, queue):
+        for i in range(self.processes):
+            queue.put(None)
+
+        self.data_queue.join()
+
+    # Returns a references dictionary for passing into a process
+    def create_reference_object(self):
+        return {
+            "collision_field": self.collision_field,
+            "collision_behavior": self.collision_behavior,
+            "logger": self.logger,
+            "pre_row_function": self.pre_row_function,
+            "post_row_function": self.post_row_function,
+            "fields": self.fields.copy(),
+            "field_map": self.field_map.copy(),
+            "value_map": self.value_map.copy(),
+            "model_class": self.model_class
+        }
+
 
 class DataLoaderThread(Process):
-    def __init__(self, name, model_class, data_queue, field_map, value_map, references):
+    def __init__(self, name, data_queue, references):
         super(DataLoaderThread, self).__init__()
         self.name = name
-        self.model_class = model_class
         self.data_queue = data_queue
-        self.field_map = field_map
-        self.value_map = value_map
         self.references = references
 
     def run(self):
@@ -133,10 +159,10 @@ class DataLoaderThread(Process):
                 model_collision_field = self.references["collision_field"]
                 data_collision_field = model_collision_field
                 # If it's in the field map, we need to look it up
-                if model_collision_field in self.field_map:
-                    data_collision_field = self.field_map[model_collision_field]
+                if model_collision_field in self.references["field_map"]:
+                    data_collision_field = self.references["field_map"][model_collision_field]
                 query = {model_collision_field: row[data_collision_field]}
-                collision_instance = self.model_class.objects.filter(**query).first()
+                collision_instance = self.references["model_class"].objects.filter(**query).first()
 
                 if collision_instance is not None:
                     behavior = self.references["collision_behavior"]
@@ -155,7 +181,7 @@ class DataLoaderThread(Process):
                         raise Exception("Hit collision on row %s" % (row))
 
             if not update:
-                model_instance = self.model_class()
+                model_instance = self.references["model_class"]()
             else:
                 model_instance = collision_instance
 
@@ -165,8 +191,8 @@ class DataLoaderThread(Process):
             try:
                 processed_row = self.load_data_into_model(model_instance,
                                                           self.references["fields"],
-                                                          self.field_map,
-                                                          self.value_map,
+                                                          self.references["field_map"],
+                                                          self.references["value_map"],
                                                           row,
                                                           self.references["logger"])
             except Exception as e:
