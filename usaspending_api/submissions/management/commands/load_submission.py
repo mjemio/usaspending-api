@@ -302,7 +302,7 @@ class Command(BaseCommand):
         threaded_loader.load_from_dict_list(award)
 
 #            award = load_data_into_model(Award(), row, field_map=award_field_map, value_map=award_value_map, as_dict=True)
-#            award, created = Award.objects.get_or_create(**award)
+            award, created = Award.objects.get_or_create(**award)
 
             fad_value_map = {
                 'data_source': 'DBR',
