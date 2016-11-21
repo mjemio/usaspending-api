@@ -164,13 +164,17 @@ class Command(BaseCommand):
             financial_by_prg_act_obj_cls = FinancialAccountsByProgramActivityObjectClass()
 
             value_map = {
+                'data_source': 'DBR',
                 'submission': submission_attributes,
                 'appropriation_account_balances': account_balances,
                 'object_class': RefObjectClassCode.objects.filter(pk=row['object_class']).first(),
                 'program_activity_code': RefProgramActivity.objects.filter(pk=row['program_activity_code']).first(),
             }
 
-            load_data_into_model(financial_by_prg_act_obj_cls, row, value_map=value_map, save=True)
+        threaded_loader = ThreadedDataLoader(FinancialAccountsByProgramActivityObjectClass, field_map=field_map, value_map=value_map)
+        threaded_loader.load_from_dict_list(prg_act_obj_cls_data)
+
+#            load_data_into_model(financial_by_prg_act_obj_cls, row, value_map=value_map, save=True)
 
         # Let's get File C information
         db_cursor.execute('SELECT * FROM award_financial WHERE submission_id = %s', [submission_id])
@@ -187,22 +191,28 @@ class Command(BaseCommand):
             award_financial_data = FinancialAccountsByAwards()
 
             value_map = {
+                'data_source': 'DBR',
                 'submission': submission_attributes,
                 'appropriation_account_balances': account_balances,
                 'object_class': RefObjectClassCode.objects.filter(pk=row['object_class']).first(),
                 'program_activity_code': RefProgramActivity.objects.filter(pk=row['program_activity_code']).first(),
             }
 
-            load_data_into_model(award_financial_data, row, value_map=value_map, save=True)
+        threaded_loader = ThreadedDataLoader(FinancialAccountsByAwards, field_map=field_map, value_map=value_map)
+        threaded_loader.load_from_dict_list(award_financial_data)
+#            load_data_into_model(award_financial_data, row, value_map=value_map, save=True)
 
             afd_trans = FinancialAccountsByAwardsTransactionObligations()
 
             value_map = {
+                'data_source': 'DBR',
                 'financial_accounts_by_awards': award_financial_data,
                 'submission': submission_attributes
             }
 
-            load_data_into_model(afd_trans, row, value_map=value_map, save=True)
+        threaded_loader = ThreadedDataLoader(FinancialAccountsByAwardsTransactionObligations, field_map=field_map, value_map=value_map)
+        threaded_loader.load_from_dict_list(award_financial_data)
+#            load_data_into_model(afd_trans, row, value_map=value_map, save=True)
 
         # File D2
         db_cursor.execute('SELECT * FROM award_financial_assistance WHERE submission_id = %s', [submission_id])
@@ -255,13 +265,19 @@ class Command(BaseCommand):
                 legal_entity = LegalEntity()
 
                 legal_entity_value_map = {
+                    'data_source': 'DBR',
                     "location": legal_entity_location,
                     "legal_entity_id": row['awardee_or_recipient_uniqu']
                 }
 
-                load_data_into_model(legal_entity, row, value_map=legal_entity_value_map, save=True)
+        threaded_loader = ThreadedDataLoader(LegalEntity, field_map=field_map, value_map=legal_entity_value_map)
+        threaded_loader.load_from_dict_list(award_financial_assistance_data)
+#                       load_data_into_model(legal_entity, row, value_map=legal_entity_value_map, save=True)
 
-            location = load_data_into_model(Location(), row, field_map=place_of_performance_field_map, as_dict=True)
+        threaded_loader = ThreadedDataLoader(Location, field_map=field_map, value_map=place_of_performance_field_map)
+        threaded_loader.load_from_dict_list(award_financial_assistance_data)
+
+#            location = load_data_into_model(Location(), row, field_map=place_of_performance_field_map, as_dict=True)
             pop_location, created = Location.objects.get_or_create(**location)
 
             # Create the base award, create actions, then tally the totals for the award
@@ -273,6 +289,7 @@ class Command(BaseCommand):
             }
 
             award_value_map = {
+                'data_source': 'DBR',
                 "period_of_performance_start_date": format_date(row['period_of_performance_star']),
                 "period_of_performance_current_end_date": format_date(row['period_of_performance_curr']),
                 "place_of_performance": pop_location,
@@ -281,16 +298,22 @@ class Command(BaseCommand):
                 "recipient": legal_entity,
             }
 
-            award = load_data_into_model(Award(), row, field_map=award_field_map, value_map=award_value_map, as_dict=True)
-            award, created = Award.objects.get_or_create(**award)
+        threaded_loader = ThreadedDataLoader(Award, field_map=award_field_map, value_map=award_value_map)
+        threaded_loader.load_from_dict_list(award)
+
+#            award = load_data_into_model(Award(), row, field_map=award_field_map, value_map=award_value_map, as_dict=True)
+#            award, created = Award.objects.get_or_create(**award)
 
             fad_value_map = {
+                'data_source': 'DBR',
                 "award": award,
                 "submission": submission_attributes
 
             }
 
-            financial_assistance_data = load_data_into_model(FinancialAssistanceAward(), row, value_map=fad_value_map, as_dict=True)
+        threaded_loader = ThreadedDataLoader(Award, field_map=field_map, value_map=fad_value_map)
+        threaded_loader.load_from_dict_list(financial_assistance_data)
+#            financial_assistance_data = load_data_into_model(FinancialAssistanceAward(), row, value_map=fad_value_map, as_dict=True)
             fad = FinancialAssistanceAward.objects.filter(award=award, modification_number=row['award_modification_amendme']).first()
             if not fad:
                 fad, created = FinancialAssistanceAward.objects.get_or_create(**financial_assistance_data)
@@ -318,7 +341,10 @@ class Command(BaseCommand):
                 'submission': submission_attributes
             }
 
-            procurement = load_data_into_model(Procurement(), row, value_map=procurement_value_map, save=True)
+        threaded_loader = ThreadedDataLoader(Procurement, field_map=field_map, value_map=procurement_value_map)
+        threaded_loader.load_from_dict_list(procurement_data)
+
+#            procurement = load_data_into_model(Procurement(), row, value_map=procurement_value_map, save=True)
 
 
 # Loads data into a model instance
