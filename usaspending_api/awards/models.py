@@ -20,6 +20,7 @@ class FinancialAccountsByAwards(DataSourceTrackedModel):
     fain = models.CharField(max_length=30, blank=True, null=True)
     uri = models.CharField(max_length=70, blank=True, null=True)
     award_type = models.CharField(max_length=30, blank=True, null=True)
+    row_number = models.IntegerField(null=True, blank=True)
     ussgl480100_undelivered_orders_obligations_unpaid_fyb = models.DecimalField(max_digits=21, decimal_places=2, blank=True, null=True)
     ussgl480100_undelivered_orders_obligations_unpaid_cpe = models.DecimalField(max_digits=21, decimal_places=2, blank=True, null=True)
     ussgl483100_undelivered_orders_oblig_transferred_unpaid_cpe = models.DecimalField(max_digits=21, decimal_places=2, blank=True, null=True)

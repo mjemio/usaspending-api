@@ -154,65 +154,47 @@ class Command(BaseCommand):
         prg_act_obj_cls_data = dictfetchall(db_cursor)
         self.logger.info('Acquired program activity object class data for ' + str(submission_id) + ', there are ' + str(len(prg_act_obj_cls_data)) + ' rows.')
 
-        for row in prg_act_obj_cls_data:
-            account_balances = None
-            try:
-                account_balances = AppropriationAccountBalances.objects.get(tas_rendering_label=row['tas'])
-            except:
-                continue
+        field_map = {}
 
-            financial_by_prg_act_obj_cls = FinancialAccountsByProgramActivityObjectClass()
-
-            value_map = {
-                'data_source': 'DBR',
-                'submission': submission_attributes,
-                'appropriation_account_balances': account_balances,
-                'object_class': RefObjectClassCode.objects.filter(pk=row['object_class']).first(),
-                'program_activity_code': RefProgramActivity.objects.filter(pk=row['program_activity_code']).first(),
-            }
+        value_map = {
+            'data_source': 'DBR',
+            'submission': submission_attributes,
+            'appropriation_account_balances': lambda row: AppropriationAccountBalances.objects.filter(tas_rendering_label=row['tas']).first(),
+            'object_class': lambda row: RefObjectClassCode.objects.filter(pk=row['object_class']).first(),
+            'program_activity_code': lambda row: RefProgramActivity.objects.filter(pk=row['program_activity_code']).first(),
+        }
 
         threaded_loader = ThreadedDataLoader(FinancialAccountsByProgramActivityObjectClass, field_map=field_map, value_map=value_map)
         threaded_loader.load_from_dict_list(prg_act_obj_cls_data)
-
-#            load_data_into_model(financial_by_prg_act_obj_cls, row, value_map=value_map, save=True)
 
         # Let's get File C information
         db_cursor.execute('SELECT * FROM award_financial WHERE submission_id = %s', [submission_id])
         award_financial_data = dictfetchall(db_cursor)
         self.logger.info('Acquired award financial data for ' + str(submission_id) + ', there are ' + str(len(award_financial_data)) + ' rows.')
 
-        for row in award_financial_data:
-            account_balances = None
-            try:
-                account_balances = AppropriationAccountBalances.objects.get(tas_rendering_label=row['tas'])
-            except:
-                continue
+        field_map = {}
 
-            award_financial_data = FinancialAccountsByAwards()
-
-            value_map = {
-                'data_source': 'DBR',
-                'submission': submission_attributes,
-                'appropriation_account_balances': account_balances,
-                'object_class': RefObjectClassCode.objects.filter(pk=row['object_class']).first(),
-                'program_activity_code': RefProgramActivity.objects.filter(pk=row['program_activity_code']).first(),
-            }
+        value_map = {
+            'data_source': 'DBR',
+            'submission': submission_attributes,
+            'appropriation_account_balances': lambda row: AppropriationAccountBalances.objects.filter(tas_rendering_label=row['tas']).first(),
+            'object_class': lambda row: RefObjectClassCode.objects.filter(pk=row['object_class']).first(),
+            'program_activity_code': lambda row: RefProgramActivity.objects.filter(pk=row['program_activity_code']).first(),
+        }
 
         threaded_loader = ThreadedDataLoader(FinancialAccountsByAwards, field_map=field_map, value_map=value_map)
         threaded_loader.load_from_dict_list(award_financial_data)
-#            load_data_into_model(award_financial_data, row, value_map=value_map, save=True)
 
-            afd_trans = FinancialAccountsByAwardsTransactionObligations()
+        field_map = {}
 
-            value_map = {
-                'data_source': 'DBR',
-                'financial_accounts_by_awards': award_financial_data,
-                'submission': submission_attributes
-            }
+        value_map = {
+            'data_source': 'DBR',
+            'financial_accounts_by_awards': lambda row: FinancialAccountsByAwards.objects.filter(row_number=row['row_number']).get(),
+            'submission': submission_attributes
+        }
 
         threaded_loader = ThreadedDataLoader(FinancialAccountsByAwardsTransactionObligations, field_map=field_map, value_map=value_map)
         threaded_loader.load_from_dict_list(award_financial_data)
-#            load_data_into_model(afd_trans, row, value_map=value_map, save=True)
 
         # File D2
         db_cursor.execute('SELECT * FROM award_financial_assistance WHERE submission_id = %s', [submission_id])
@@ -253,50 +235,34 @@ class Command(BaseCommand):
             "location_zip4": "place_of_performance_zip4a",
         }
 
-        for row in award_financial_assistance_data:
-            location = load_data_into_model(Location(), row, field_map=legal_entity_location_field_map, as_dict=True)
-            legal_entity_location, created = Location.objects.get_or_create(**location)
+        field_map = {}
 
-            # Create the legal entity if it doesn't exist
-            legal_entity = None
-            try:
-                legal_entity = LegalEntity.objects.get(row['awardee_or_recipient_uniqu'])
-            except:
-                legal_entity = LegalEntity()
+        value_map = {
+            'data_source': 'DBR',
+            "location": lambda row:  Location.objects.get_or_create(load_data_into_model(Location(), row, field_map=legal_entity_location_field_map, as_dict=True))[0],
+            "legal_entity_id": lambda row: row['awardee_or_recipient_uniqu']
+        }
 
-                legal_entity_value_map = {
-                    'data_source': 'DBR',
-                    "location": legal_entity_location,
-                    "legal_entity_id": row['awardee_or_recipient_uniqu']
-                }
-
-        threaded_loader = ThreadedDataLoader(LegalEntity, field_map=field_map, value_map=legal_entity_value_map)
-        threaded_loader.load_from_dict_list(award_financial_assistance_data)
-#                       load_data_into_model(legal_entity, row, value_map=legal_entity_value_map, save=True)
-
-        threaded_loader = ThreadedDataLoader(Location, field_map=field_map, value_map=place_of_performance_field_map)
+        threaded_loader = ThreadedDataLoader(LegalEntity, field_map=field_map, value_map=legal_entity_value_map, collision_field="recipient_unique_id", collision_behavior="skip")
         threaded_loader.load_from_dict_list(award_financial_assistance_data)
 
-#            location = load_data_into_model(Location(), row, field_map=place_of_performance_field_map, as_dict=True)
-            pop_location, created = Location.objects.get_or_create(**location)
+        # Create the base award, create actions, then tally the totals for the award
+        award_field_map = {
+            "description": "award_description",
+            "awarding_agency__cgac_code": "awarding_agency_code",
+            "funding_agency__cgac_code": "functing_agency_code",
+            "type": "assistance_type"
+        }
 
-            # Create the base award, create actions, then tally the totals for the award
-            award_field_map = {
-                "description": "award_description",
-                "awarding_agency__cgac_code": "awarding_agency_code",
-                "funding_agency__cgac_code": "functing_agency_code",
-                "type": "assistance_type"
-            }
-
-            award_value_map = {
-                'data_source': 'DBR',
-                "period_of_performance_start_date": format_date(row['period_of_performance_star']),
-                "period_of_performance_current_end_date": format_date(row['period_of_performance_curr']),
-                "place_of_performance": pop_location,
-                "date_signed": format_date(row['action_date']),
-                "latest_submission": submission_attributes,
-                "recipient": legal_entity,
-            }
+        award_value_map = {
+            'data_source': 'DBR',
+            "period_of_performance_start_date": lambda row: format_date(row['period_of_performance_star']),
+            "period_of_performance_current_end_date": lambda row: format_date(row['period_of_performance_curr']),
+            "place_of_performance": lambda row: Location.objects.get_or_create(load_data_into_model(Location(), row, field_map=place_of_performance_field_map, as_dict=True))[0],
+            "date_signed": lambda row: format_date(row['action_date']),
+            "latest_submission": submission_attributes,
+            "recipient": legal_entity,
+        }
 
         threaded_loader = ThreadedDataLoader(Award, field_map=award_field_map, value_map=award_value_map)
         threaded_loader.load_from_dict_list(award)
