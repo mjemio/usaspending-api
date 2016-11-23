@@ -32,7 +32,7 @@ class Command(BaseCommand):
             "action_date": lambda row: self.convert_date(row['signeddate']),
             "last_modified_date": lambda row: self.convert_date(row['last_modified_date']),
             "gfe_gfp": lambda row: row['gfe_gfp'].split(":")[0],
-            "submission": SubmissionAttributes.objects.all().first()  # Probably want to change this?
+#            "submission": SubmissionAttributes.objects.all().first()  # Probably want to change this?
         }
 
         loader = ThreadedDataLoader(Procurement, field_map=field_map, value_map=value_map, post_row_function=self.post_row_process_function)
